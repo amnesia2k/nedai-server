@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --hot src/server.ts",
+    "postinstall": "prisma generate",
     "generate": "prisma generate",
     "studio": "prisma studio",
     "push": "prisma db push",
