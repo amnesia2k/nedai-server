@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2023",
+    "esModuleInterop": true,
+    "ignoreDeprecations": "6.0",
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "types": ["bun"],
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  }
+}

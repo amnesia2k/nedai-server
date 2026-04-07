@@ -1,0 +1,144 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+enum UserRole {
+  STUDENT
+  LECTURER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum DocumentVisibility {
+  PRIVATE
+  GLOBAL
+}
+
+enum DocumentOrigin {
+  USER_UPLOAD
+  DEFAULT_CORPUS
+}
+
+enum SourceType {
+  PDF
+  DOCX
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         UserRole @default(STUDENT)
+  institution  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  documents Documents[]
+  chats     Chat[]
+  chunks    DocumentChunk[]
+
+  @@map("users")
+}
+
+model Documents {
+  id               String             @id @default(uuid())
+  // PRIVATE rows must have userId set; GLOBAL rows must leave userId null.
+  userId           String?
+  visibility       DocumentVisibility @default(PRIVATE)
+  origin           DocumentOrigin     @default(USER_UPLOAD)
+  title            String
+  originalFilename String
+  mimeType         String
+  storagePath      String
+  status           DocumentStatus     @default(UPLOADED)
+  sourceType       SourceType
+  subject          String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  user   User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks DocumentChunk[]
+
+  @@index([visibility])
+  @@index([subject, visibility])
+  @@index([userId, visibility])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id         String             @id @default(uuid())
+  documentId String
+  // Must match the parent document ownership semantics.
+  userId     String?
+  visibility DocumentVisibility @default(PRIVATE)
+  chunkIndex Int
+  text       String             @db.Text
+  tokenCount Int
+  pageStart  Int?
+  pageEnd    Int?
+  heading    String?
+  // Use Unsupported for vector since Prisma doesn't natively support it yet
+  // Xenova/bge-small-en-v1.5 uses 384 dimensions
+  embedding  Unsupported("vector(384)")?
+  createdAt  DateTime           @default(now())
+
+  document Documents @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([visibility])
+  @@index([userId, visibility])
+  @@index([documentId, visibility])
+  @@map("document_chunks")
+}
+
+model Chat {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId])
+  @@map("chats")
+}
+
+model Message {
+  id            String      @id @default(uuid())
+  chatId        String
+  role          MessageRole
+  content       String      @db.Text
+  citationsJson Json?
+  createdAt     DateTime    @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@map("messages")
+}

@@ -1,0 +1,37 @@
+{
+  "name": "nedai-server",
+  "type": "module",
+  "scripts": {
+    "dev": "prisma db push && prisma generate && bun run --hot src/server.ts",
+    "generate": "prisma generate",
+    "studio": "prisma studio",
+    "push": "prisma db push",
+    "reset": "prisma migrate reset",
+    "test": "bun test",
+    "ingest:knowledge": "bun run src/scripts/ingest-knowledge-sources.ts",
+    "prepare:knowledge": "bun run src/scripts/prepare-knowledge-sources.ts",
+    "embed:knowledge": "bun run src/scripts/backfill-knowledge-embeddings.ts",
+    "migrate:global-knowledge": "bun run src/scripts/migrate-global-knowledge.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
+    "@xenova/transformers": "^2.17.2",
+    "dotenv": "^17.4.1",
+    "groq-sdk": "^1.1.2",
+    "hono": "^4.12.11",
+    "mammoth": "^1.12.0",
+    "multer": "^2.1.1",
+    "openai": "^6.33.0",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.20.0",
+    "prisma": "^7.6.0",
+    "sharp": "^0.34.5",
+    "uploadthing": "^7.7.4",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/pg": "^8.20.0"
+  }
+}
