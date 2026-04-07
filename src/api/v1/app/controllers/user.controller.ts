@@ -12,3 +12,22 @@ export async function getCurrentUser(c: Context<AppBindings>) {
     user,
   });
 }
+
+export async function updateCurrentUser(c: Context<AppBindings>) {
+  const payload = getJwtPayload(c);
+  const body = await c.req.json();
+  const user = await AuthService.updateCurrentUser(payload.sub, body);
+
+  return respond(c, 200, "Profile updated successfully", {
+    user,
+  });
+}
+
+export async function changeCurrentPassword(c: Context<AppBindings>) {
+  const payload = getJwtPayload(c);
+  const body = await c.req.json();
+
+  await AuthService.changeCurrentPassword(payload.sub, body);
+
+  return respond(c, 200, "Password changed successfully");
+}

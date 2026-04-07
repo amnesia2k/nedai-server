@@ -7,15 +7,23 @@ import {
   type LoginInput,
   type RegisterInput,
 } from "@/api/v1/app/schemas/auth.schema";
+import {
+  changePasswordSchema,
+  updateCurrentUserSchema,
+  type UpdateCurrentUserInput,
+} from "@/api/v1/app/schemas/user.schema";
 import { serializeUser } from "@/api/v1/serializers/user.serializer";
+import type { User } from "@prisma/client";
 
-class AuthServiceImpl {
+export class AuthServiceImpl {
+  constructor(private readonly prismaClient: typeof prisma = prisma) {}
+
   public async register(payload: unknown) {
     const data = registerSchema.parse(payload);
     await this.assertEmailAvailable(data.email);
 
     const passwordHash = await Bun.password.hash(data.password);
-    const user = await prisma.user.create({
+    const user = await this.prismaClient.user.create({
       data: {
         fullName: data.name,
         email: data.email,
@@ -33,7 +41,7 @@ class AuthServiceImpl {
 
   public async login(payload: unknown) {
     const data = loginSchema.parse(payload);
-    const user = await prisma.user.findUnique({
+    const user = await this.prismaClient.user.findUnique({
       where: {
         email: data.email,
       },
@@ -61,23 +69,54 @@ class AuthServiceImpl {
   }
 
   public async getCurrentUser(userId: string) {
-    const user = await prisma.user.findUnique({
+    const user = await this.getRequiredUser(userId);
+    return serializeUser(user);
+  }
+
+  public async updateCurrentUser(userId: string, payload: unknown) {
+    await this.getRequiredUser(userId);
+
+    const data = updateCurrentUserSchema.parse(payload);
+    const updateData = this.buildCurrentUserUpdateData(data);
+    const user = await this.prismaClient.user.update({
       where: {
         id: userId,
       },
+      data: updateData,
     });
 
-    if (!user) {
-      throw new ApiError(401, "Unauthorized");
+    return serializeUser(user);
+  }
+
+  public async changeCurrentPassword(userId: string, payload: unknown) {
+    const user = await this.getRequiredUser(userId);
+    const data = changePasswordSchema.parse(payload);
+
+    const isPasswordValid = await Bun.password.verify(
+      data.oldPassword,
+      user.passwordHash,
+    );
+
+    if (!isPasswordValid) {
+      throw new ApiError(400, "Current password is incorrect");
     }
 
-    return serializeUser(user);
+    const passwordHash = await Bun.password.hash(data.newPassword);
+
+    await this.prismaClient.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        passwordHash,
+      },
+    });
   }
 
   private async assertEmailAvailable(
     email: RegisterInput["email"] | LoginInput["email"],
   ) {
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await this.prismaClient.user.findUnique({
       where: {
         email,
       },
@@ -89,6 +128,32 @@ class AuthServiceImpl {
     if (existingUser) {
       throw new ApiError(409, "An account with this email already exists");
     }
+  }
+
+  private buildCurrentUserUpdateData(data: UpdateCurrentUserInput) {
+    const updateData: {
+      fullName?: string;
+    } = {};
+
+    if (data.name !== undefined) {
+      updateData.fullName = data.name;
+    }
+
+    return updateData;
+  }
+
+  private async getRequiredUser(userId: string): Promise<User> {
+    const user = await this.prismaClient.user.findUnique({
+      where: {
+        id: userId,
+      },
+    });
+
+    if (!user) {
+      throw new ApiError(401, "Unauthorized");
+    }
+
+    return user;
   }
 }
 
