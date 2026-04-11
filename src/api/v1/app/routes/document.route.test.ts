@@ -140,6 +140,19 @@ describe("document routes", () => {
     expect(listDocumentsMock).toHaveBeenCalledWith("user-1");
   });
 
+  it("returns 410 for legacy multipart uploads", async () => {
+    const app = createApp();
+    const headers = await createAuthHeader();
+
+    const response = await app.request("/api/v1/documents", {
+      method: "POST",
+      headers,
+    });
+
+    expect(response.status).toBe(410);
+    expect(uploadDocumentMock).not.toHaveBeenCalled();
+  });
+
   it("gets an owned document", async () => {
     const app = createApp();
     const headers = await createAuthHeader();

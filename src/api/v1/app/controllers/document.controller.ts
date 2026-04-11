@@ -14,13 +14,8 @@ export async function listDocuments(c: Context<AppBindings>) {
 }
 
 export async function createDocument(c: Context<AppBindings>) {
-  const payload = getJwtPayload(c);
-  const formData = await c.req.formData();
-  const document = await DocumentService.uploadDocument(payload.sub, formData);
-
-  return respond(c, 202, "Document upload accepted", {
-    document,
-  });
+  getJwtPayload(c);
+  return respond(c, 410, "Use the UploadThing upload flow");
 }
 
 export async function getDocument(c: Context<AppBindings>) {

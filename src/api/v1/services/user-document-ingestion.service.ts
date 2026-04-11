@@ -12,6 +12,7 @@ import {
   sanitizeExtractedText,
   toVectorLiteral,
 } from "@/utils/knowledge-source.util";
+import { isRemoteFileUrl } from "@/uploadthing/utils";
 
 type PoolLike = Pick<Pool, "query" | "end">;
 
@@ -76,10 +77,15 @@ export class UserDocumentIngestionService {
     });
 
     try {
-      const absolutePath = DocumentStorage.resolveAbsolutePath(document.storagePath);
-      const extractedText = await DocumentParser.extractTextFromDocument(
-        absolutePath,
+      const location =
+        document.origin === DocumentOrigin.USER_UPLOAD &&
+        isRemoteFileUrl(document.storagePath)
+          ? document.storagePath
+          : DocumentStorage.resolveAbsolutePath(document.storagePath);
+      const extractedText = await DocumentParser.extractTextFromLocation(
+        location,
         document.sourceType,
+        document.origin,
       );
       const normalizedText = sanitizeExtractedText(extractedText);
       const chunkTexts = chunkText(normalizedText);

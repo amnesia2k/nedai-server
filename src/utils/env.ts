@@ -31,6 +31,7 @@ export const env = {
   GROQ_API_KEY: process.env.GROQ_API_KEY,
   GROQ_CHAT_MODEL: process.env.GROQ_CHAT_MODEL || "openai/gpt-oss-20b",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  UPLOADTHING_TOKEN: process.env.UPLOADTHING_TOKEN,
   JWT_SECRET: getRequiredEnv("JWT_SECRET"),
   CHAT_RETRIEVAL_TOP_K: Math.max(1, Math.floor(getNumberEnv("CHAT_RETRIEVAL_TOP_K", 5))),
   CHAT_RETRIEVAL_MIN_SCORE: getNumberEnv("CHAT_RETRIEVAL_MIN_SCORE", 0.2),

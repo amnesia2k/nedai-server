@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
 
 import {
@@ -12,12 +11,13 @@ import prisma from "@/lib/prisma";
 import { serializeDocument } from "@/api/v1/serializers/document.serializer";
 import {
   MAX_DOCUMENTS_PER_USER,
-  MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
 } from "@/api/v1/services/document.constants";
 import UserDocumentIngestion from "@/api/v1/services/user-document-ingestion.service";
 import DocumentParser from "@/api/v1/services/document-parser.service";
 import DocumentStorage from "@/api/v1/services/document-storage.service";
+import { deleteUploadThingFileByUrl } from "@/uploadthing/utapi";
+import { isRemoteFileUrl } from "@/uploadthing/utils";
 
 function buildDefaultTitle(filename: string) {
   const parsed = path.parse(filename);
@@ -51,87 +51,8 @@ export class DocumentServiceImpl {
     return serializeDocument(document);
   }
 
-  public async uploadDocument(userId: string, formData: FormData) {
-    const file = formData.get("file");
-    const rawTitle = formData.get("title");
-
-    if (!(file instanceof File)) {
-      throw new ApiError(400, "A file upload is required");
-    }
-
-    if (file.size > MAX_FILE_BYTES) {
-      throw new ApiError(413, "The file exceeds the 5 MB upload limit");
-    }
-
-    const sourceType = DocumentParser.getSourceType(file.name);
-    await DocumentParser.assertUploadSupported(sourceType);
-
-    const quota = await this.getQuota(userId);
-
-    if (quota.usedDocuments >= quota.maxDocuments) {
-      throw new ApiError(409, "You have reached the 10 document limit");
-    }
-
-    if (quota.usedBytes + file.size > quota.maxBytes) {
-      throw new ApiError(409, "This upload would exceed your total storage quota");
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const contentHash = createHash("sha256").update(buffer).digest("hex");
-
-    const duplicateDocument = await prisma.documents.findFirst({
-      where: {
-        userId,
-        contentHash,
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (duplicateDocument) {
-      throw new ApiError(409, "This document has already been uploaded");
-    }
-
-    const storedFile = await DocumentStorage.writeUserUpload({
-      userId,
-      originalFilename: file.name,
-      buffer,
-    });
-
-    try {
-      const document = await prisma.documents.create({
-        data: {
-          userId,
-          visibility: DocumentVisibility.PRIVATE,
-          origin: DocumentOrigin.USER_UPLOAD,
-          title:
-            typeof rawTitle === "string" && rawTitle.trim().length > 0
-              ? rawTitle.trim()
-              : buildDefaultTitle(file.name),
-          originalFilename: file.name,
-          mimeType:
-            file.type ||
-            (sourceType === "PDF"
-              ? "application/pdf"
-              : sourceType === "DOCX"
-                ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                : "application/msword"),
-          storagePath: storedFile.storagePath,
-          status: DocumentStatus.UPLOADED,
-          sourceType,
-          byteSize: storedFile.byteSize,
-          contentHash,
-        },
-      });
-
-      UserDocumentIngestion.queue(document.id);
-
-      return serializeDocument(document);
-    } catch (error) {
-      await DocumentStorage.deleteStoredFile(storedFile.storagePath);
-      throw error;
-    }
+  public async uploadDocument() {
+    throw new ApiError(410, "Use the UploadThing upload flow");
   }
 
   public async deleteDocument(userId: string, documentId: string) {
@@ -140,6 +61,11 @@ export class DocumentServiceImpl {
     await prisma.documents.delete({
       where: { id: document.id },
     });
+
+    if (isRemoteFileUrl(document.storagePath)) {
+      await deleteUploadThingFileByUrl(document.storagePath);
+      return;
+    }
 
     await DocumentStorage.deleteStoredFile(document.storagePath);
   }
@@ -182,7 +108,7 @@ export class DocumentServiceImpl {
     return document;
   }
 
-  private async getQuota(userId: string) {
+  public async getQuota(userId: string) {
     const [usedDocuments, aggregate] = await Promise.all([
       prisma.documents.count({
         where: {
@@ -209,6 +135,81 @@ export class DocumentServiceImpl {
       maxBytes: MAX_TOTAL_BYTES,
       usedBytes: aggregate._sum.byteSize ?? 0,
     };
+  }
+
+  public async createDocumentFromUpload(options: {
+    userId: string;
+    title?: string;
+    file: {
+      name: string;
+      size: number;
+      type: string;
+      ufsUrl: string;
+      fileHash: string;
+    };
+  }) {
+    const sourceType = DocumentParser.getSourceType(options.file.name);
+    await DocumentParser.assertUploadSupported(sourceType);
+
+    const quota = await this.getQuota(options.userId);
+
+    if (quota.usedDocuments >= quota.maxDocuments) {
+      throw new ApiError(409, "You have reached the 10 document limit");
+    }
+
+    if (quota.usedBytes + options.file.size > quota.maxBytes) {
+      throw new ApiError(
+        409,
+        "This upload would exceed your total storage quota",
+      );
+    }
+
+    const contentHash = options.file.fileHash || null;
+
+    if (contentHash) {
+      const duplicateDocument = await prisma.documents.findFirst({
+        where: {
+          userId: options.userId,
+          contentHash,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (duplicateDocument) {
+        throw new ApiError(409, "This document has already been uploaded");
+      }
+    }
+
+    const document = await prisma.documents.create({
+      data: {
+        userId: options.userId,
+        visibility: DocumentVisibility.PRIVATE,
+        origin: DocumentOrigin.USER_UPLOAD,
+        title:
+          typeof options.title === "string" && options.title.trim().length > 0
+            ? options.title.trim()
+            : buildDefaultTitle(options.file.name),
+        originalFilename: options.file.name,
+        mimeType:
+          options.file.type ||
+          (sourceType === "PDF"
+            ? "application/pdf"
+            : sourceType === "DOCX"
+              ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              : "application/msword"),
+        storagePath: options.file.ufsUrl,
+        status: DocumentStatus.UPLOADED,
+        sourceType,
+        byteSize: options.file.size,
+        contentHash,
+      },
+    });
+
+    UserDocumentIngestion.queue(document.id);
+
+    return document;
   }
 }
 
