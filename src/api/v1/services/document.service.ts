@@ -25,13 +25,37 @@ function buildDefaultTitle(filename: string) {
 }
 
 export class DocumentServiceImpl {
-  public async listDocuments(userId: string) {
+  public async listDocuments(
+    userId: string,
+    options?: {
+      documentName?: string;
+    },
+  ) {
+    const documentName = options?.documentName?.trim();
     const [documents, quota] = await Promise.all([
       prisma.documents.findMany({
         where: {
           userId,
           visibility: DocumentVisibility.PRIVATE,
           origin: DocumentOrigin.USER_UPLOAD,
+          ...(documentName
+            ? {
+                OR: [
+                  {
+                    title: {
+                      contains: documentName,
+                      mode: "insensitive",
+                    },
+                  },
+                  {
+                    originalFilename: {
+                      contains: documentName,
+                      mode: "insensitive",
+                    },
+                  },
+                ],
+              }
+            : {}),
         },
         orderBy: {
           createdAt: "desc",

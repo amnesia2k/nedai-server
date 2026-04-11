@@ -3,6 +3,8 @@ import { MessageRole, UserRole } from "@prisma/client";
 
 import { ChatServiceImpl } from "@/api/v1/services/chat.service";
 
+const SELECTED_DOCUMENT_ID = "6bb74a48-2f8a-4d9c-abbb-01fced8f3a11";
+
 function createChat(id = "chat-1", title = "New chat") {
   return {
     id,
@@ -93,6 +95,7 @@ function createPrismaMock() {
       ]),
     },
     documents: {
+      findFirst: mock(async () => null),
       findMany: mock(async () => [
         {
           id: "doc-1",
@@ -202,6 +205,7 @@ describe("ChatServiceImpl", () => {
     expect(retrievalService.retrieveRelevantChunks).toHaveBeenCalledWith(
       "user-1",
       "Explain kinetic energy in simple terms",
+      undefined,
     );
     expect(createCompletion).toHaveBeenCalledTimes(1);
     const promptMessages = (createCompletion as any).mock.calls[0][0].messages;
@@ -302,6 +306,207 @@ describe("ChatServiceImpl", () => {
 
     expect(result.answer.usedGeneralKnowledge).toBe(true);
     expect(result.answer.grounded).toBe(false);
+  });
+
+  it("rejects assessment prompts without a tagged document", async () => {
+    const prisma = createPrismaMock();
+    const service = new ChatServiceImpl({
+      prisma: prisma as never,
+      retrievalService: {
+        retrieveRelevantChunks: mock(async () => []),
+      },
+      getGroqClient: () =>
+        ({
+          chat: {
+            completions: {
+              create: mock(async () => ({
+                choices: [{ message: { content: "unused" } }],
+              })),
+            },
+          },
+        }) as never,
+    });
+
+    await expect(
+      service.sendMessage("user-1", {
+        content: "Give me a 5-question multiple-choice quiz",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Tag a document with @ before requesting a quiz or exam, then retry.",
+    });
+  });
+
+  it("uses the selected document for retrieval and prompt context", async () => {
+    const prisma = createPrismaMock();
+    const createdChat = createChat("chat-1", "New chat");
+    const titledChat = {
+      ...createdChat,
+      title: "Give me a chemistry quiz",
+      updatedAt: new Date("2026-04-07T08:01:00.000Z"),
+    };
+    const finalChat = {
+      ...titledChat,
+      updatedAt: new Date("2026-04-07T08:02:00.000Z"),
+    };
+    const userMessage = createMessage({
+      id: "message-user",
+      role: MessageRole.USER,
+      content: "Give me a chemistry quiz",
+      createdAt: new Date("2026-04-07T08:00:30.000Z"),
+    });
+    const assistantMessage = createMessage({
+      id: "message-assistant",
+      role: MessageRole.ASSISTANT,
+      content: "1. Question one",
+      citationsJson: {
+        grounded: true,
+        usedGeneralKnowledge: false,
+        sources: [],
+        retrieval: [],
+      },
+      createdAt: new Date("2026-04-07T08:01:30.000Z"),
+    });
+    const retrievalService = {
+      retrieveRelevantChunks: mock(async () => [
+        {
+          chunkId: "chunk-1",
+          documentId: "doc-1",
+          subject: "Chemistry",
+          lessonTitle: "Atomic structure",
+          sourcePath: "uploads/user-1/chemistry.pdf",
+          pageNumber: 3,
+          text: "Atoms consist of protons, neutrons, and electrons.",
+          score: 0.91,
+        },
+      ]),
+    };
+    const createCompletion = mock(async () => ({
+      choices: [
+        {
+          message: {
+            content: "1. Question one",
+          },
+        },
+      ],
+    }));
+
+    (prisma.chat.create as any).mockResolvedValue(createdChat);
+    (prisma.chat.update as any).mockResolvedValueOnce(titledChat);
+    (prisma.chat.update as any).mockResolvedValueOnce(finalChat);
+    (prisma.message.create as any).mockResolvedValueOnce(userMessage);
+    (prisma.message.create as any).mockResolvedValueOnce(assistantMessage);
+    (prisma.message.findMany as any).mockResolvedValueOnce([]);
+    (prisma.documents.findFirst as any).mockResolvedValueOnce({
+      id: SELECTED_DOCUMENT_ID,
+      title: "Chemistry Notes",
+      sourceType: "PDF",
+      status: "READY",
+    });
+
+    const service = new ChatServiceImpl({
+      prisma: prisma as never,
+      retrievalService,
+      getGroqClient: () =>
+        ({
+          chat: {
+            completions: {
+              create: createCompletion,
+            },
+          },
+        }) as never,
+      historyLimit: 10,
+      chatModel: "openai/gpt-oss-20b",
+    });
+
+    await service.sendMessage("user-1", {
+      content: "Give me a chemistry quiz",
+      documentId: SELECTED_DOCUMENT_ID,
+    });
+
+    expect(retrievalService.retrieveRelevantChunks).toHaveBeenCalledWith(
+      "user-1",
+      "Give me a chemistry quiz",
+      { documentId: SELECTED_DOCUMENT_ID },
+    );
+    const promptMessages = (createCompletion as any).mock.calls[0][0].messages;
+    expect(
+      promptMessages.some(
+        (message: { content: string }) =>
+          message.content === "Active tagged document: Chemistry Notes (PDF)",
+      ),
+    ).toBe(true);
+    expect(promptMessages[0].content).toContain(
+      "generate it directly in the chat as Markdown text",
+    );
+  });
+
+  it("rejects unknown selected documents", async () => {
+    const prisma = createPrismaMock();
+    (prisma.documents.findFirst as any).mockResolvedValueOnce(null);
+    const service = new ChatServiceImpl({
+      prisma: prisma as never,
+      retrievalService: {
+        retrieveRelevantChunks: mock(async () => []),
+      },
+      getGroqClient: () =>
+        ({
+          chat: {
+            completions: {
+              create: mock(async () => ({
+                choices: [{ message: { content: "unused" } }],
+              })),
+            },
+          },
+        }) as never,
+    });
+
+    await expect(
+      service.sendMessage("user-1", {
+        content: "Summarize this document",
+        documentId: SELECTED_DOCUMENT_ID,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      message: "Document not found",
+    });
+  });
+
+  it("rejects selected documents that are not ready", async () => {
+    const prisma = createPrismaMock();
+    (prisma.documents.findFirst as any).mockResolvedValueOnce({
+      id: SELECTED_DOCUMENT_ID,
+      title: "Chemistry Notes",
+      sourceType: "PDF",
+      status: "PROCESSING",
+    });
+    const service = new ChatServiceImpl({
+      prisma: prisma as never,
+      retrievalService: {
+        retrieveRelevantChunks: mock(async () => []),
+      },
+      getGroqClient: () =>
+        ({
+          chat: {
+            completions: {
+              create: mock(async () => ({
+                choices: [{ message: { content: "unused" } }],
+              })),
+            },
+          },
+        }) as never,
+    });
+
+    await expect(
+      service.sendMessage("user-1", {
+        content: "Summarize this document",
+        documentId: SELECTED_DOCUMENT_ID,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "Selected document is not ready yet. Choose another file or wait for processing.",
+    });
   });
 
   it("clears all chats for a user", async () => {

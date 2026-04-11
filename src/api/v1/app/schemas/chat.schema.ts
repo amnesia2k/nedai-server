@@ -9,6 +9,7 @@ export const chatParamsSchema = z
 export const sendMessageSchema = z
   .object({
     chatId: z.string().uuid("Chat ID must be a valid UUID").optional(),
+    documentId: z.string().uuid("Document ID must be a valid UUID").optional(),
     content: z
       .string()
       .trim()

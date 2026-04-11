@@ -194,6 +194,39 @@ describe("DocumentServiceImpl", () => {
     expect(document.id).toBe("doc-1");
   });
 
+  it("filters listed documents by title or original filename", async () => {
+    const service = new DocumentServiceImpl();
+
+    await service.listDocuments("user-1", {
+      documentName: "chem",
+    });
+
+    expect(prismaMock.documents.findMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        visibility: DocumentVisibility.PRIVATE,
+        origin: DocumentOrigin.USER_UPLOAD,
+        OR: [
+          {
+            title: {
+              contains: "chem",
+              mode: "insensitive",
+            },
+          },
+          {
+            originalFilename: {
+              contains: "chem",
+              mode: "insensitive",
+            },
+          },
+        ],
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+  });
+
   it("deletes uploadthing-backed files by URL", async () => {
     const service = new DocumentServiceImpl();
     (prismaMock.documents.findFirst as any).mockResolvedValueOnce({

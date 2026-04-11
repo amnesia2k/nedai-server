@@ -23,6 +23,7 @@ import {
   buildUserContextBlock,
 } from "@/api/v1/services/user-context.service";
 import { getGroqClient } from "@/lib/groq";
+import { isAssessmentRequest } from "@/utils/assessment-intent.util";
 
 type PrismaLike = Pick<
   typeof prisma,
@@ -33,6 +34,7 @@ type GroqClientLike = Pick<Groq, "chat">;
 
 type SendMessagePayload = {
   chatId?: string;
+  documentId?: string;
   content: string;
 };
 
@@ -40,6 +42,9 @@ type ChatRetrievalServiceLike = {
   retrieveRelevantChunks: (
     userId: string,
     question: string,
+    options?: {
+      documentId?: string;
+    },
   ) => Promise<RetrievedChunk[]>;
 };
 
@@ -71,6 +76,9 @@ type ChatServiceOptions = {
 };
 
 const CHAT_TITLE_LIMIT = 60;
+const QUIZ_ATTACHMENT_REQUIRED_MESSAGE =
+  "Tag a document with @ before requesting a quiz or exam, then retry.";
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -148,6 +156,11 @@ function logChatStageError(
   });
 }
 
+type SelectedDocument = Pick<
+  Documents,
+  "id" | "title" | "sourceType" | "status"
+>;
+
 export class ChatServiceImpl {
   private readonly prisma: PrismaLike;
   private readonly retrievalService: ChatRetrievalServiceLike;
@@ -203,6 +216,14 @@ export class ChatServiceImpl {
 
   public async sendMessage(userId: string, payload: unknown) {
     const data = sendMessageSchema.parse(payload) as SendMessagePayload;
+    const selectedDocument = data.documentId
+      ? await this.getSelectedDocument(userId, data.documentId)
+      : null;
+
+    if (isAssessmentRequest(data.content) && !selectedDocument) {
+      throw new ApiError(400, QUIZ_ATTACHMENT_REQUIRED_MESSAGE);
+    }
+
     let chat = data.chatId
       ? await this.getOwnedChat(userId, data.chatId)
       : await this.prisma.chat.create({
@@ -250,6 +271,7 @@ export class ChatServiceImpl {
       retrievedChunks = await this.retrievalService.retrieveRelevantChunks(
         userId,
         data.content,
+        selectedDocument ? { documentId: selectedDocument.id } : undefined,
       );
     } catch (error) {
       logChatStageError("retrieval", error, {
@@ -294,7 +316,7 @@ export class ChatServiceImpl {
       {
         role: "system" as const,
         content:
-          "You are NedAI, a concise study assistant. Prefer the provided study context when it is relevant. If the context is weak or missing, say so briefly and answer using general knowledge. Do not invent or claim sources you were not given. Keep answers clear, educational, and formatted in Markdown. Use LaTeX delimiters such as $...$ or $$...$$ when formulas are helpful.",
+          "You are NedAI, a concise study assistant. Prefer the provided study context when it is relevant. If the context is weak or missing, say so briefly and answer using general knowledge. Do not invent or claim sources you were not given. Keep answers clear, educational, and formatted in Markdown. Use LaTeX delimiters such as $...$ or $$...$$ when formulas are helpful. If the user asks for a quiz or exam, generate it directly in the chat as Markdown text, tell the student to reply in chat with their answers, and never refer to a separate assessment screen or custom controls.",
       },
       {
         role: "system" as const,
@@ -308,6 +330,14 @@ export class ChatServiceImpl {
         role: "system" as const,
         content: buildKnowledgeVaultContextBlock(readyDocuments),
       },
+      ...(selectedDocument
+        ? [
+            {
+              role: "system" as const,
+              content: `Active tagged document: ${selectedDocument.title} (${selectedDocument.sourceType})`,
+            },
+          ]
+        : []),
       {
         role: "system" as const,
         content: `Retrieved context:\n\n${buildContextBlock(retrievedChunks)}`,
@@ -393,6 +423,36 @@ export class ChatServiceImpl {
     }
 
     return chat;
+  }
+
+  private async getSelectedDocument(userId: string, documentId: string) {
+    const document = await this.prisma.documents.findFirst({
+      where: {
+        id: documentId,
+        userId,
+        visibility: DocumentVisibility.PRIVATE,
+        origin: DocumentOrigin.USER_UPLOAD,
+      },
+      select: {
+        id: true,
+        title: true,
+        sourceType: true,
+        status: true,
+      },
+    });
+
+    if (!document) {
+      throw new ApiError(404, "Document not found");
+    }
+
+    if (document.status !== DocumentStatus.READY) {
+      throw new ApiError(
+        409,
+        "Selected document is not ready yet. Choose another file or wait for processing.",
+      );
+    }
+
+    return document;
   }
 }
 

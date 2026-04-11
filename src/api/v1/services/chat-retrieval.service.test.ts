@@ -94,4 +94,27 @@ describe("ChatRetrievalService", () => {
     expect(queryText).not.toContain(`d."visibility" = 'GLOBAL'`);
     expect(queryValues).toEqual(["user-1", "[1,2,3]", "READY", 3]);
   });
+
+  it("restricts retrieval to the selected document when provided", async () => {
+    const query = mock(async () => ({
+      rows: [],
+    }));
+    const service = new ChatRetrievalService({
+      pool: {
+        query,
+        end: mock(async () => {}),
+      },
+      embedQuery: mock(async () => [1, 2, 3]),
+      topK: 3,
+      minScore: 0.2,
+    });
+
+    await service.retrieveRelevantChunks("user-1", "Explain force", {
+      documentId: "doc-9",
+    });
+    const [queryText, queryValues] = (query as any).mock.calls[0];
+
+    expect(queryText).toContain(`dc."documentId" = $5`);
+    expect(queryValues).toEqual(["user-1", "[1,2,3]", "READY", 3, "doc-9"]);
+  });
 });

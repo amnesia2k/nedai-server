@@ -137,7 +137,21 @@ describe("document routes", () => {
 
     const response = await app.request("/api/v1/documents", { headers });
     expect(response.status).toBe(200);
-    expect(listDocumentsMock).toHaveBeenCalledWith("user-1");
+    expect(listDocumentsMock).toHaveBeenCalledWith("user-1", undefined);
+  });
+
+  it("passes the optional documentName filter to the service", async () => {
+    const app = createApp();
+    const headers = await createAuthHeader();
+
+    const response = await app.request("/api/v1/documents?documentName=chem", {
+      headers,
+    });
+
+    expect(response.status).toBe(200);
+    expect(listDocumentsMock).toHaveBeenCalledWith("user-1", {
+      documentName: "chem",
+    });
   });
 
   it("returns 410 for legacy multipart uploads", async () => {

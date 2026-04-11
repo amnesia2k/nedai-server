@@ -2,13 +2,20 @@ import type { Context } from "hono";
 
 import type { AppBindings } from "@/middleware/auth";
 import { getJwtPayload } from "@/middleware/auth";
-import { documentParamsSchema } from "@/api/v1/app/schemas/document.schema";
+import {
+  documentParamsSchema,
+  listDocumentsQuerySchema,
+} from "@/api/v1/app/schemas/document.schema";
 import DocumentService from "@/api/v1/services/document.service";
 import respond from "@/utils/response.util";
 
 export async function listDocuments(c: Context<AppBindings>) {
   const payload = getJwtPayload(c);
-  const result = await DocumentService.listDocuments(payload.sub);
+  const query = listDocumentsQuerySchema.parse(c.req.query());
+  const result = await DocumentService.listDocuments(
+    payload.sub,
+    query.documentName ? query : undefined,
+  );
 
   return respond(c, 200, "Documents fetched successfully", result);
 }

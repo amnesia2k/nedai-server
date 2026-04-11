@@ -212,4 +212,27 @@ describe("chat routes", () => {
     });
     expect(body.data.answer.answer).toBe("Speed is distance over time.");
   });
+
+  it("passes the selected document id when provided", async () => {
+    const app = createApp();
+    const headers = await createAuthHeader();
+
+    const response = await app.request("/api/v1/chats/messages", {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        content: "Give me a quiz",
+        documentId: "6bb74a48-2f8a-4d9c-abbb-01fced8f3a11",
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(sendMessageMock).toHaveBeenCalledWith("user-1", {
+      content: "Give me a quiz",
+      documentId: "6bb74a48-2f8a-4d9c-abbb-01fced8f3a11",
+    });
+  });
 });

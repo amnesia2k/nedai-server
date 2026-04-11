@@ -38,6 +38,10 @@ export type RetrievedChunk = {
   score: number;
 };
 
+type RetrievalOptions = {
+  documentId?: string;
+};
+
 type ChatRetrievalServiceOptions = {
   pool?: PoolLike;
   embedQuery?: (text: string) => Promise<number[]>;
@@ -66,10 +70,20 @@ export class ChatRetrievalService {
   public async retrieveRelevantChunks(
     userId: string,
     question: string,
+    options: RetrievalOptions = {},
   ): Promise<RetrievedChunk[]> {
     const queryEmbedding = await this.embedQuery(question);
     const accessClause = buildPrivateAndGlobalChunkAccessClause("$1", "dc");
     const vectorLiteral = toVectorLiteral(queryEmbedding);
+    const queryValues: unknown[] = [
+      userId,
+      vectorLiteral,
+      DocumentStatus.READY,
+      this.topK,
+    ];
+    const documentFilter = options.documentId
+      ? `\n          AND dc."documentId" = $${queryValues.push(options.documentId)}`
+      : "";
     const result = (await this.pool.query(
       `
         SELECT
@@ -88,15 +102,11 @@ export class ChatRetrievalService {
         WHERE dc."embedding" IS NOT NULL
           AND d."status" = $3
           AND ${accessClause}
+          ${documentFilter}
         ORDER BY dc."embedding" <=> $2::vector ASC
         LIMIT $4
       `,
-      [
-        userId,
-        vectorLiteral,
-        DocumentStatus.READY,
-        this.topK,
-      ],
+      queryValues,
     )) as { rows: RetrievalRow[] };
 
     return result.rows
