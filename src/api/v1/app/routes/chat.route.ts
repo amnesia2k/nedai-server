@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { AppBindings } from "@/middleware/auth";
 import { requireAuth } from "@/middleware/auth";
 import {
+  clearChats,
   getChatMessages,
   listChats,
   sendMessage,
@@ -12,6 +13,7 @@ const router = new Hono<AppBindings>();
 
 router.use("*", requireAuth);
 router.get("/", listChats);
+router.delete("/", clearChats);
 router.get("/:chatId/messages", getChatMessages);
 router.post("/messages", sendMessage);
 

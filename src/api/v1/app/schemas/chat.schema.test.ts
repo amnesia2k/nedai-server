@@ -13,17 +13,13 @@ describe("chat schema validation", () => {
     });
   });
 
-  it("accepts chatId with documentIds", () => {
+  it("accepts chatId with content", () => {
     const result = sendMessageSchema.parse({
       chatId: "4b3739f4-ed95-4ff2-a0b1-16f7910a45c4",
       content: "Use these docs",
-      documentIds: ["9917bda1-c6d6-4c27-bf26-f1dd2b76488f"],
     });
 
     expect(result.chatId).toBe("4b3739f4-ed95-4ff2-a0b1-16f7910a45c4");
-    expect(result.documentIds).toEqual([
-      "9917bda1-c6d6-4c27-bf26-f1dd2b76488f",
-    ]);
   });
 
   it("trims content", () => {
@@ -49,15 +45,5 @@ describe("chat schema validation", () => {
         content: "Explain force",
       }),
     ).toThrow("Chat ID must be a valid UUID");
-  });
-
-  it("dedupes repeated documentIds", () => {
-    const documentId = "c9329456-1b99-4c22-84d6-870bff0a6585";
-    const result = sendMessageSchema.parse({
-      content: "Explain pressure",
-      documentIds: [documentId, documentId],
-    });
-
-    expect(result.documentIds).toEqual([documentId]);
   });
 });

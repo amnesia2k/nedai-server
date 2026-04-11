@@ -55,7 +55,6 @@ describe("ChatRetrievalService", () => {
       "user-1",
       "[0.1,0.2,0.3]",
       "READY",
-      null,
       5,
     ]);
     expect(result).toEqual([
@@ -75,7 +74,7 @@ describe("ChatRetrievalService", () => {
     ]);
   });
 
-  it("narrows retrieval when documentIds are provided", async () => {
+  it("always retrieves across all accessible documents", async () => {
     const query = mock(async () => ({
       rows: [],
     }));
@@ -89,15 +88,10 @@ describe("ChatRetrievalService", () => {
       minScore: 0.2,
     });
 
-    await service.retrieveRelevantChunks("user-1", "Explain force", ["doc-9"]);
-    const [, queryValues] = (query as any).mock.calls[0];
+    await service.retrieveRelevantChunks("user-1", "Explain force");
+    const [queryText, queryValues] = (query as any).mock.calls[0];
 
-    expect(queryValues).toEqual([
-      "user-1",
-      "[1,2,3]",
-      "READY",
-      ["doc-9"],
-      3,
-    ]);
+    expect(queryText).not.toContain(`d."visibility" = 'GLOBAL'`);
+    expect(queryValues).toEqual(["user-1", "[1,2,3]", "READY", 3]);
   });
 });

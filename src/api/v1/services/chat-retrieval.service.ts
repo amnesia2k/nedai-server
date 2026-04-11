@@ -66,7 +66,6 @@ export class ChatRetrievalService {
   public async retrieveRelevantChunks(
     userId: string,
     question: string,
-    documentIds?: string[],
   ): Promise<RetrievedChunk[]> {
     const queryEmbedding = await this.embedQuery(question);
     const accessClause = buildPrivateAndGlobalChunkAccessClause("$1", "dc");
@@ -89,15 +88,13 @@ export class ChatRetrievalService {
         WHERE dc."embedding" IS NOT NULL
           AND d."status" = $3
           AND ${accessClause}
-          AND ($4::text[] IS NULL OR dc."documentId" = ANY($4::text[]))
         ORDER BY dc."embedding" <=> $2::vector ASC
-        LIMIT $5
+        LIMIT $4
       `,
       [
         userId,
         vectorLiteral,
         DocumentStatus.READY,
-        documentIds?.length ? documentIds : null,
         this.topK,
       ],
     )) as { rows: RetrievalRow[] };

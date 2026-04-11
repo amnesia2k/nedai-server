@@ -5,25 +5,28 @@ import { loginSchema, registerSchema } from "@/api/v1/app/schemas/auth.schema";
 describe("auth schema validation", () => {
   it("normalizes valid register input", () => {
     const result = registerSchema.parse({
-      name: "  John Doe  ",
+      fullName: "  John Doe  ",
       email: "  JOHN@EXAMPLE.COM  ",
       password: "secret123",
+      role: "LECTURER",
     });
 
     expect(result).toEqual({
-      name: "John Doe",
+      fullName: "John Doe",
       email: "john@example.com",
       password: "secret123",
+      role: "LECTURER",
     });
   });
 
   it("rejects unknown register fields", () => {
     expect(() =>
       registerSchema.parse({
-        name: "John Doe",
+        fullName: "John Doe",
         email: "john@example.com",
         password: "secret123",
         role: "LECTURER",
+        extra: true,
       }),
     ).toThrow();
   });

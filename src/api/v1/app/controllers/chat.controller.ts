@@ -30,3 +30,10 @@ export async function sendMessage(c: Context<AppBindings>) {
 
   return respond(c, 201, "Message sent successfully", result);
 }
+
+export async function clearChats(c: Context<AppBindings>) {
+  const payload = getJwtPayload(c);
+  await ChatService.clearChats(payload.sub);
+
+  return c.body(null, 204);
+}

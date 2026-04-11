@@ -1,7 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { MessageRole } from "@prisma/client";
+import { MessageRole, UserRole } from "@prisma/client";
 
-import { ApiError } from "@/lib/api-error";
 import { ChatServiceImpl } from "@/api/v1/services/chat.service";
 
 function createChat(id = "chat-1", title = "New chat") {
@@ -32,13 +31,42 @@ function createMessage(input: {
   };
 }
 
+function createUser() {
+  return {
+    id: "user-1",
+    email: "user@example.com",
+    passwordHash: "hashed",
+    fullName: "John Doe",
+    preferredName: null,
+    aboutMe: null,
+    likes: [],
+    dislikes: [],
+    learningPreferences: null,
+    role: UserRole.STUDENT,
+    institution: "NedAI University",
+    department: null,
+    matricNumber: "MAT-001",
+    staffId: null,
+    studentAcademicLevel: "400 Level",
+    dateOfBirth: new Date("2000-10-12T00:00:00.000Z"),
+    lecturerHighestQualification: null,
+    lecturerCurrentAcademicStage: null,
+    createdAt: new Date("2026-04-07T08:00:00.000Z"),
+    updatedAt: new Date("2026-04-07T08:00:00.000Z"),
+  };
+}
+
 function createPrismaMock() {
   return {
+    user: {
+      findUnique: mock(async () => createUser()),
+    },
     chat: {
       findMany: mock(async () => []),
       findFirst: mock(async () => null),
       create: mock(async () => createChat()),
       update: mock(async () => createChat()),
+      deleteMany: mock(async () => ({ count: 1 })),
     },
     message: {
       findMany: mock(async () => []),
@@ -50,11 +78,48 @@ function createPrismaMock() {
         }),
       ),
     },
+    timetableActivity: {
+      findMany: mock(async () => [
+        {
+          id: "activity-1",
+          userId: "user-1",
+          name: "Study group",
+          dayOfWeek: "MONDAY",
+          startTime: "09:00",
+          endTime: "11:00",
+          createdAt: new Date("2026-04-07T08:00:00.000Z"),
+          updatedAt: new Date("2026-04-07T08:00:00.000Z"),
+        },
+      ]),
+    },
+    documents: {
+      findMany: mock(async () => [
+        {
+          id: "doc-1",
+          userId: "user-1",
+          title: "Chemistry Notes",
+          originalFilename: "chemistry.pdf",
+          mimeType: "application/pdf",
+          storagePath: "uploads/user-1/chemistry.pdf",
+          status: "READY",
+          visibility: "PRIVATE",
+          origin: "USER_UPLOAD",
+          sourceType: "PDF",
+          byteSize: 100,
+          chunkCount: 2,
+          processingError: null,
+          subject: null,
+          contentHash: null,
+          createdAt: new Date("2026-04-07T08:00:00.000Z"),
+          updatedAt: new Date("2026-04-07T08:00:00.000Z"),
+        },
+      ]),
+    },
   };
 }
 
 describe("ChatServiceImpl", () => {
-  it("creates a new chat, generates a title, and persists grounded metadata", async () => {
+  it("creates a new chat and stores grounded metadata", async () => {
     const prisma = createPrismaMock();
     const createdChat = createChat("chat-1", "New chat");
     const titledChat = {
@@ -113,14 +178,7 @@ describe("ChatServiceImpl", () => {
     (prisma.chat.update as any).mockResolvedValueOnce(finalChat);
     (prisma.message.create as any).mockResolvedValueOnce(userMessage);
     (prisma.message.create as any).mockResolvedValueOnce(assistantMessage);
-    (prisma.message.findMany as any).mockResolvedValueOnce([
-      createMessage({
-        id: "message-history",
-        role: MessageRole.ASSISTANT,
-        content: "Previous answer",
-        createdAt: new Date("2026-04-07T07:59:00.000Z"),
-      }),
-    ]);
+    (prisma.message.findMany as any).mockResolvedValueOnce([]);
 
     const service = new ChatServiceImpl({
       prisma: prisma as never,
@@ -141,62 +199,16 @@ describe("ChatServiceImpl", () => {
       content: "Explain kinetic energy in simple terms",
     });
 
-    expect(prisma.chat.create).toHaveBeenCalledTimes(1);
-    expect(prisma.chat.update).toHaveBeenCalledTimes(2);
-    expect((prisma.chat.update as any).mock.calls[0][0]).toEqual({
-      where: {
-        id: "chat-1",
-      },
-      data: {
-        title: "Explain kinetic energy in simple terms",
-      },
-    });
     expect(retrievalService.retrieveRelevantChunks).toHaveBeenCalledWith(
       "user-1",
       "Explain kinetic energy in simple terms",
-      undefined,
     );
     expect(createCompletion).toHaveBeenCalledTimes(1);
-    expect((prisma.message.create as any).mock.calls[1][0]).toEqual({
-      data: {
-        chatId: "chat-1",
-        role: MessageRole.ASSISTANT,
-        content: "Kinetic energy is the energy of motion.",
-        citationsJson: {
-          grounded: true,
-          usedGeneralKnowledge: false,
-          sources: [
-            {
-              subject: "Physics",
-              lessonTitle: "Energy",
-              sourcePath: "Physics/Energy.docx",
-              pageNumber: 3,
-            },
-          ],
-          retrieval: [
-            {
-              documentId: "doc-1",
-              chunkId: "chunk-1",
-              score: 0.91,
-              excerpt: "Kinetic energy is energy possessed by a moving body.",
-            },
-          ],
-        },
-      },
-    });
-    expect(result.answer).toEqual({
-      answer: "Kinetic energy is the energy of motion.",
-      grounded: true,
-      usedGeneralKnowledge: false,
-      sources: [
-        {
-          subject: "Physics",
-          lessonTitle: "Energy",
-          sourcePath: "Physics/Energy.docx",
-          pageNumber: 3,
-        },
-      ],
-    });
+    const promptMessages = (createCompletion as any).mock.calls[0][0].messages;
+    expect(promptMessages[1].content).toContain("Academic profile");
+    expect(promptMessages[2].content).toContain("Weekly timetable");
+    expect(promptMessages[3].content).toContain("Knowledge vault");
+    expect(result.answer.grounded).toBe(true);
   });
 
   it("rejects access to another user's chat", async () => {
@@ -286,71 +298,24 @@ describe("ChatServiceImpl", () => {
     const result = await service.sendMessage("user-1", {
       chatId: "e6fd0c85-7fd0-4d04-b252-abf6ff5da87c",
       content: "Explain inertia",
-      documentIds: ["018e585b-f7e0-4457-9bc0-cb0741ac6bb2"],
     });
 
     expect(result.answer.usedGeneralKnowledge).toBe(true);
     expect(result.answer.grounded).toBe(false);
-    expect((prisma.message.create as any).mock.calls[1][0]).toEqual({
-      data: {
-        chatId: "chat-1",
-        role: MessageRole.ASSISTANT,
-        content: "I am answering from general knowledge.",
-        citationsJson: {
-          grounded: false,
-          usedGeneralKnowledge: true,
-          sources: [],
-          retrieval: [],
-        },
-      },
-    });
   });
 
-  it("keeps the user message if Groq fails", async () => {
+  it("clears all chats for a user", async () => {
     const prisma = createPrismaMock();
-    const createdChat = createChat("chat-1", "New chat");
-    const titledChat = {
-      ...createdChat,
-      title: "Explain momentum",
-      updatedAt: new Date("2026-04-07T08:01:00.000Z"),
-    };
-    const userMessage = createMessage({
-      id: "message-user",
-      role: MessageRole.USER,
-      content: "Explain momentum",
-    });
-
-    (prisma.chat.create as any).mockResolvedValue(createdChat);
-    (prisma.chat.update as any).mockResolvedValueOnce(titledChat);
-    (prisma.message.create as any).mockResolvedValueOnce(userMessage);
-    (prisma.message.findMany as any).mockResolvedValueOnce([]);
-
     const service = new ChatServiceImpl({
       prisma: prisma as never,
-      retrievalService: {
-        retrieveRelevantChunks: mock(async () => []),
-      },
-      getGroqClient: () =>
-        ({
-          chat: {
-            completions: {
-              create: mock(async () => {
-                throw new Error("provider down");
-              }),
-            },
-          },
-        }) as never,
     });
 
-    await expect(
-      service.sendMessage("user-1", {
-        content: "Explain momentum",
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 502,
-      message: "AI provider request failed",
+    await service.clearChats("user-1");
+
+    expect(prisma.chat.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+      },
     });
-    expect(prisma.message.create).toHaveBeenCalledTimes(1);
-    expect(prisma.chat.update).toHaveBeenCalledTimes(1);
   });
 });

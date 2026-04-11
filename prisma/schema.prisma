@@ -38,6 +38,17 @@ enum DocumentOrigin {
 enum SourceType {
   PDF
   DOCX
+  DOC
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
 }
 
 enum MessageRole {
@@ -47,18 +58,31 @@ enum MessageRole {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  role         UserRole @default(STUDENT)
-  institution  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  passwordHash        String
+  fullName            String
+  preferredName       String?
+  aboutMe             String?  @db.Text
+  likes               String[] @default([])
+  dislikes            String[] @default([])
+  learningPreferences Json?
+  role                UserRole @default(STUDENT)
+  institution         String?
+  department          String?
+  matricNumber        String?
+  staffId             String?
+  studentAcademicLevel String?
+  dateOfBirth         DateTime? @db.Date
+  lecturerHighestQualification String?
+  lecturerCurrentAcademicStage String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  documents Documents[]
-  chats     Chat[]
-  chunks    DocumentChunk[]
+  documents          Documents[]
+  chats              Chat[]
+  chunks             DocumentChunk[]
+  timetableActivities TimetableActivity[]
 
   @@map("users")
 }
@@ -76,6 +100,10 @@ model Documents {
   status           DocumentStatus     @default(UPLOADED)
   sourceType       SourceType
   subject          String?
+  byteSize         Int                @default(0)
+  contentHash      String?
+  chunkCount       Int                @default(0)
+  processingError  String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -85,6 +113,7 @@ model Documents {
   @@index([visibility])
   @@index([subject, visibility])
   @@index([userId, visibility])
+  @@index([userId, contentHash])
   @@map("documents")
 }
 
@@ -141,4 +170,20 @@ model Message {
 
   @@index([chatId])
   @@map("messages")
+}
+
+model TimetableActivity {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  dayOfWeek Weekday
+  startTime String
+  endTime   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek, startTime])
+  @@map("timetable_activities")
 }

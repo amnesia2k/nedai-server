@@ -13,7 +13,20 @@ import {
   type UpdateCurrentUserInput,
 } from "@/api/v1/app/schemas/user.schema";
 import { serializeUser } from "@/api/v1/serializers/user.serializer";
-import type { User } from "@prisma/client";
+import { UserRole, type Prisma, type User } from "@prisma/client";
+
+function normalizeNullableString(value: string | null | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 export class AuthServiceImpl {
   constructor(private readonly prismaClient: typeof prisma = prisma) {}
@@ -25,9 +38,10 @@ export class AuthServiceImpl {
     const passwordHash = await Bun.password.hash(data.password);
     const user = await this.prismaClient.user.create({
       data: {
-        fullName: data.name,
+        fullName: data.fullName,
         email: data.email,
         passwordHash,
+        role: data.role,
       },
     });
 
@@ -74,18 +88,18 @@ export class AuthServiceImpl {
   }
 
   public async updateCurrentUser(userId: string, payload: unknown) {
-    await this.getRequiredUser(userId);
+    const currentUser = await this.getRequiredUser(userId);
 
     const data = updateCurrentUserSchema.parse(payload);
-    const updateData = this.buildCurrentUserUpdateData(data);
-    const user = await this.prismaClient.user.update({
+    const updateData = this.buildCurrentUserUpdateData(currentUser, data);
+    const updatedUser = await this.prismaClient.user.update({
       where: {
         id: userId,
       },
       data: updateData,
     });
 
-    return serializeUser(user);
+    return serializeUser(updatedUser);
   }
 
   public async changeCurrentPassword(userId: string, payload: unknown) {
@@ -130,13 +144,65 @@ export class AuthServiceImpl {
     }
   }
 
-  private buildCurrentUserUpdateData(data: UpdateCurrentUserInput) {
-    const updateData: {
-      fullName?: string;
-    } = {};
+  private buildCurrentUserUpdateData(
+    user: User,
+    data: UpdateCurrentUserInput,
+  ) {
+    if (user.role === UserRole.LECTURER && data.matricNumber != null) {
+      throw new ApiError(400, "Matric number is only valid for students");
+    }
 
-    if (data.name !== undefined) {
-      updateData.fullName = data.name;
+    if (
+      user.role === UserRole.STUDENT &&
+      (data.lecturerHighestQualification != null ||
+        data.lecturerCurrentAcademicStage != null)
+    ) {
+      throw new ApiError(400, "Lecturer profile fields are only valid for lecturers");
+    }
+
+    if (
+      user.role === UserRole.LECTURER &&
+      (data.studentAcademicLevel != null || data.dateOfBirth != null)
+    ) {
+      throw new ApiError(400, "Student profile fields are only valid for students");
+    }
+
+    const updateData: Prisma.UserUpdateInput = {};
+
+    if (data.fullName !== undefined) {
+      updateData.fullName = data.fullName;
+    }
+
+    if (data.institution !== undefined) {
+      updateData.institution = normalizeNullableString(data.institution);
+    }
+
+    if (data.matricNumber !== undefined) {
+      updateData.matricNumber = normalizeNullableString(data.matricNumber);
+    }
+
+    if (data.studentAcademicLevel !== undefined) {
+      updateData.studentAcademicLevel = normalizeNullableString(
+        data.studentAcademicLevel,
+      );
+    }
+
+    if (data.dateOfBirth !== undefined) {
+      updateData.dateOfBirth = data.dateOfBirth
+        ? new Date(`${data.dateOfBirth}T00:00:00.000Z`)
+        : null;
+    }
+
+    if (data.lecturerHighestQualification !== undefined) {
+      updateData.lecturerHighestQualification = normalizeNullableString(
+        data.lecturerHighestQualification,
+      );
+    }
+
+    if (data.lecturerCurrentAcademicStage !== undefined) {
+      updateData.lecturerCurrentAcademicStage = normalizeNullableString(
+        data.lecturerCurrentAcademicStage,
+      );
     }
 
     return updateData;

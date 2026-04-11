@@ -29,9 +29,10 @@ describe("errorHandler", () => {
 
     app.get("/invalid", () => {
       registerSchema.parse({
-        name: "John Doe",
+        fullName: "John Doe",
         email: "not-an-email",
         password: "secret123",
+        role: "STUDENT",
       });
 
       return new Response("ok");

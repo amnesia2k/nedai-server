@@ -6,13 +6,13 @@ import {
 } from "@/api/v1/app/schemas/user.schema";
 
 describe("user schema validation", () => {
-  it("accepts a valid profile patch with trimmed name", () => {
+  it("accepts a valid profile patch with trimmed fullName", () => {
     const result = updateCurrentUserSchema.parse({
-      name: "  John Doe  ",
+      fullName: "  John Doe  ",
     });
 
     expect(result).toEqual({
-      name: "John Doe",
+      fullName: "John Doe",
     });
   });
 
