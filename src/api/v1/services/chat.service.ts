@@ -1,5 +1,17 @@
-import type { Chat, Documents, Message, Prisma, TimetableActivity, User } from "@prisma/client";
-import { DocumentOrigin, DocumentStatus, DocumentVisibility, MessageRole } from "@prisma/client";
+import type {
+  Chat,
+  Documents,
+  Message,
+  Prisma,
+  TimetableActivity,
+  User,
+} from "@prisma/client";
+import {
+  DocumentOrigin,
+  DocumentStatus,
+  DocumentVisibility,
+  MessageRole,
+} from "@prisma/client";
 import type Groq from "groq-sdk";
 
 import { ApiError } from "@/lib/api-error";
@@ -74,6 +86,8 @@ type ChatServiceOptions = {
   getGroqClient?: () => GroqClientLike;
   historyLimit?: number;
   chatModel?: string;
+  topK?: number;
+  minScore?: number;
 };
 
 const CHAT_TITLE_LIMIT = 60;
@@ -168,6 +182,8 @@ export class ChatServiceImpl {
   private readonly getGroqClient: () => GroqClientLike;
   private readonly historyLimit: number;
   private readonly chatModel: string;
+  private readonly topK: number;
+  private readonly minScore: number;
 
   constructor(options: ChatServiceOptions = {}) {
     this.prisma = options.prisma ?? prisma;
@@ -175,6 +191,8 @@ export class ChatServiceImpl {
     this.getGroqClient = options.getGroqClient ?? getGroqClient;
     this.historyLimit = options.historyLimit ?? env.CHAT_HISTORY_LIMIT;
     this.chatModel = options.chatModel ?? env.GROQ_CHAT_MODEL;
+    this.topK = options.topK ?? env.CHAT_RETRIEVAL_TOP_K;
+    this.minScore = options.minScore ?? env.CHAT_RETRIEVAL_MIN_SCORE;
   }
 
   public async listChats(userId: string) {
@@ -250,6 +268,15 @@ export class ChatServiceImpl {
         content: data.content,
         documentId: selectedDocument?.id,
       },
+      include: {
+        document: {
+          select: {
+            id: true,
+            title: true,
+            sourceType: true,
+          },
+        },
+      },
     });
 
     const nextTitle =
@@ -278,21 +305,31 @@ export class ChatServiceImpl {
     const orderedHistory = history.reverse();
     let retrievedChunks: RetrievedChunk[];
 
-    const allUsedDocumentIds = await this.prisma.message.findMany({
-      where: {
-        chatId: chat.id,
-        documentId: { not: null },
-      },
-      select: {
-        documentId: true,
-      },
-    }).then(msgs => [...new Set(msgs.map(m => m.documentId as string))]);
+    const allUsedDocumentIds = await this.prisma.message
+      .findMany({
+        where: {
+          chatId: chat.id,
+          documentId: { not: null },
+        },
+        select: {
+          documentId: true,
+        },
+      })
+      .then((msgs) =>
+        Array.from(new Set(msgs.map((m) => m.documentId as string))),
+      );
 
     try {
+      // If a document is specifically tagged, we increase the topK for that document
+      // to ensure more content is retrieved (critical for summaries).
+      const retrievalOptions = selectedDocument
+        ? { documentId: selectedDocument.id, topK: Math.max(this.topK, 15) }
+        : { documentIds: allUsedDocumentIds };
+
       retrievedChunks = await this.retrievalService.retrieveRelevantChunks(
         userId,
         data.content,
-        { documentIds: allUsedDocumentIds },
+        retrievalOptions as any,
       );
     } catch (error) {
       logChatStageError("retrieval", error, {
@@ -418,10 +455,16 @@ export class ChatServiceImpl {
       },
     });
 
-    const promptCharCount = promptMessages.reduce((sum, m) => sum + m.content.length, 0);
+    const promptCharCount = promptMessages.reduce(
+      (sum, m) => sum + m.content.length,
+      0,
+    );
     const estimatedTokens = Math.ceil(promptCharCount / 4);
     const contextCapacity = 8192; // Default for Llama3-70b-8192
-    const contextUsage = Math.min(100, Math.ceil((estimatedTokens / contextCapacity) * 100));
+    const contextUsage = Math.min(
+      100,
+      Math.ceil((estimatedTokens / contextCapacity) * 100),
+    );
 
     return {
       chat: serializeChat(chat),

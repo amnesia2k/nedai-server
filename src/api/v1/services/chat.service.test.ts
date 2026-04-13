@@ -205,7 +205,7 @@ describe("ChatServiceImpl", () => {
     expect(retrievalService.retrieveRelevantChunks).toHaveBeenCalledWith(
       "user-1",
       "Explain kinetic energy in simple terms",
-      undefined,
+      { documentIds: [] },
     );
     expect(createCompletion).toHaveBeenCalledTimes(1);
     const promptMessages = (createCompletion as any).mock.calls[0][0].messages;
@@ -333,7 +333,8 @@ describe("ChatServiceImpl", () => {
       }),
     ).rejects.toMatchObject({
       statusCode: 400,
-      message: "Tag a document with @ before requesting a quiz or exam, then retry.",
+      message:
+        "Tag a document with @ before requesting a quiz or exam, then retry.",
     });
   });
 
@@ -427,8 +428,18 @@ describe("ChatServiceImpl", () => {
     expect(retrievalService.retrieveRelevantChunks).toHaveBeenCalledWith(
       "user-1",
       "Give me a chemistry quiz",
-      { documentId: SELECTED_DOCUMENT_ID },
+      { documentId: SELECTED_DOCUMENT_ID, topK: 15 },
     );
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          document: {
+            select: { id: true, title: true, sourceType: true },
+          },
+        },
+      }),
+    );
+
     const promptMessages = (createCompletion as any).mock.calls[0][0].messages;
     expect(
       promptMessages.some(
