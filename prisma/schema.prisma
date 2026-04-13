@@ -107,8 +107,9 @@ model Documents {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
-  user   User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chunks DocumentChunk[]
+  user     User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks   DocumentChunk[]
+  messages Message[]
 
   @@index([visibility])
   @@index([subject, visibility])
@@ -164,9 +165,11 @@ model Message {
   role          MessageRole
   content       String      @db.Text
   citationsJson Json?
+  documentId    String?
   createdAt     DateTime    @default(now())
 
-  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chat     Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  document Documents? @relation(fields: [documentId], references: [id], onDelete: SetNull)
 
   @@index([chatId])
   @@map("messages")

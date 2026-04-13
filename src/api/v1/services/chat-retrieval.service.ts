@@ -40,6 +40,7 @@ export type RetrievedChunk = {
 
 type RetrievalOptions = {
   documentId?: string;
+  documentIds?: string[];
 };
 
 type ChatRetrievalServiceOptions = {
@@ -83,7 +84,9 @@ export class ChatRetrievalService {
     ];
     const documentFilter = options.documentId
       ? `\n          AND dc."documentId" = $${queryValues.push(options.documentId)}`
-      : "";
+      : options.documentIds?.length
+        ? `\n          AND dc."documentId" = ANY($${queryValues.push(options.documentIds)})`
+        : "";
     const result = (await this.pool.query(
       `
         SELECT

@@ -69,12 +69,18 @@ function parseMetadata(
   };
 }
 
-export function serializeMessage(message: Message) {
+export function serializeMessage(
+  message: Message & {
+    document?: { id: string; title: string; sourceType: string } | null;
+  },
+) {
   const serialized = {
     id: message.id,
     chatId: message.chatId,
     role: normalizeRole(message.role),
     content: message.content,
+    documentId: message.documentId,
+    document: message.document ?? undefined,
     createdAt: message.createdAt.toISOString(),
   };
 

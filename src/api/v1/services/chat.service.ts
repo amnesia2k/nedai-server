@@ -44,6 +44,7 @@ type ChatRetrievalServiceLike = {
     question: string,
     options?: {
       documentId?: string;
+      documentIds?: string[];
     },
   ) => Promise<RetrievedChunk[]>;
 };
@@ -195,6 +196,15 @@ export class ChatServiceImpl {
       where: {
         chatId: chat.id,
       },
+      include: {
+        document: {
+          select: {
+            id: true,
+            title: true,
+            sourceType: true,
+          },
+        },
+      },
       orderBy: {
         createdAt: "asc",
       },
@@ -238,6 +248,7 @@ export class ChatServiceImpl {
         chatId: chat.id,
         role: MessageRole.USER,
         content: data.content,
+        documentId: selectedDocument?.id,
       },
     });
 
@@ -267,11 +278,21 @@ export class ChatServiceImpl {
     const orderedHistory = history.reverse();
     let retrievedChunks: RetrievedChunk[];
 
+    const allUsedDocumentIds = await this.prisma.message.findMany({
+      where: {
+        chatId: chat.id,
+        documentId: { not: null },
+      },
+      select: {
+        documentId: true,
+      },
+    }).then(msgs => [...new Set(msgs.map(m => m.documentId as string))]);
+
     try {
       retrievedChunks = await this.retrievalService.retrieveRelevantChunks(
         userId,
         data.content,
-        selectedDocument ? { documentId: selectedDocument.id } : undefined,
+        { documentIds: allUsedDocumentIds },
       );
     } catch (error) {
       logChatStageError("retrieval", error, {
@@ -397,6 +418,11 @@ export class ChatServiceImpl {
       },
     });
 
+    const promptCharCount = promptMessages.reduce((sum, m) => sum + m.content.length, 0);
+    const estimatedTokens = Math.ceil(promptCharCount / 4);
+    const contextCapacity = 8192; // Default for Llama3-70b-8192
+    const contextUsage = Math.min(100, Math.ceil((estimatedTokens / contextCapacity) * 100));
+
     return {
       chat: serializeChat(chat),
       userMessage: serializeMessage(userMessage),
@@ -407,6 +433,7 @@ export class ChatServiceImpl {
         usedGeneralKnowledge: assistantMetadata.usedGeneralKnowledge,
         sources: assistantMetadata.sources,
       },
+      contextUsage,
     };
   }
 
