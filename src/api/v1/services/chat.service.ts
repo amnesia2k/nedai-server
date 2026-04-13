@@ -57,6 +57,8 @@ type ChatRetrievalServiceLike = {
     options?: {
       documentId?: string;
       documentIds?: string[];
+      topK?: number;
+      minScore?: number;
     },
   ) => Promise<RetrievedChunk[]>;
 };
@@ -323,13 +325,13 @@ export class ChatServiceImpl {
       // If a document is specifically tagged, we increase the topK for that document
       // to ensure more content is retrieved (critical for summaries).
       const retrievalOptions = selectedDocument
-        ? { documentId: selectedDocument.id, topK: Math.max(this.topK, 15) }
+        ? { documentId: selectedDocument.id, topK: Math.max(this.topK, 15), minScore: 0.1 }
         : { documentIds: allUsedDocumentIds };
 
       retrievedChunks = await this.retrievalService.retrieveRelevantChunks(
         userId,
         data.content,
-        retrievalOptions as any,
+        retrievalOptions,
       );
     } catch (error) {
       logChatStageError("retrieval", error, {

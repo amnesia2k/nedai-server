@@ -41,6 +41,8 @@ export type RetrievedChunk = {
 type RetrievalOptions = {
   documentId?: string;
   documentIds?: string[];
+  topK?: number;
+  minScore?: number;
 };
 
 type ChatRetrievalServiceOptions = {
@@ -76,11 +78,13 @@ export class ChatRetrievalService {
     const queryEmbedding = await this.embedQuery(question);
     const accessClause = buildPrivateAndGlobalChunkAccessClause("$1", "dc");
     const vectorLiteral = toVectorLiteral(queryEmbedding);
+    const effectiveTopK = options.topK ?? this.topK;
+    const effectiveMinScore = options.minScore ?? this.minScore;
     const queryValues: unknown[] = [
       userId,
       vectorLiteral,
       DocumentStatus.READY,
-      this.topK,
+      effectiveTopK,
     ];
     const documentFilter = options.documentId
       ? `\n          AND dc."documentId" = $${queryValues.push(options.documentId)}`
@@ -130,7 +134,7 @@ export class ChatRetrievalService {
           score,
         } satisfies RetrievedChunk;
       })
-      .filter((row) => row.score >= this.minScore);
+      .filter((row) => row.score >= effectiveMinScore);
   }
 
   public async disconnect() {

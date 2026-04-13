@@ -117,4 +117,43 @@ describe("ChatRetrievalService", () => {
     expect(queryText).toContain(`dc."documentId" = $5`);
     expect(queryValues).toEqual(["user-1", "[1,2,3]", "READY", 3, "doc-9"]);
   });
+
+  it("uses per-call topK and minScore overrides", async () => {
+    const query = mock(async () => ({
+      rows: [
+        {
+          chunkId: "chunk-1",
+          documentId: "doc-9",
+          subject: null,
+          lessonTitle: "Application Form",
+          sourcePath: "uploads/user-1/form.pdf",
+          pageStart: 1,
+          pageEnd: 1,
+          heading: "Application Form",
+          text: "Personal details section of the form.",
+          score: "0.25",
+        },
+      ],
+    }));
+    const service = new ChatRetrievalService({
+      pool: {
+        query,
+        end: mock(async () => {}),
+      },
+      embedQuery: mock(async () => [1, 2, 3]),
+      topK: 5,
+      minScore: 0.5,
+    });
+
+    const result = await service.retrieveRelevantChunks(
+      "user-1",
+      "summarize this document",
+      { documentId: "doc-9", topK: 15, minScore: 0.1 },
+    );
+    const [, queryValues] = (query as any).mock.calls[0];
+
+    expect(queryValues[3]).toBe(15);
+    expect(result).toHaveLength(1);
+    expect(result[0].score).toBe(0.25);
+  });
 });

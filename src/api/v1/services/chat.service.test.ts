@@ -428,7 +428,7 @@ describe("ChatServiceImpl", () => {
     expect(retrievalService.retrieveRelevantChunks).toHaveBeenCalledWith(
       "user-1",
       "Give me a chemistry quiz",
-      { documentId: SELECTED_DOCUMENT_ID, topK: 15 },
+      { documentId: SELECTED_DOCUMENT_ID, topK: 15, minScore: 0.1 },
     );
     expect(prisma.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
