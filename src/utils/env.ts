@@ -33,9 +33,15 @@ export const env = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   UPLOADTHING_TOKEN: process.env.UPLOADTHING_TOKEN,
   JWT_SECRET: getRequiredEnv("JWT_SECRET"),
-  CHAT_RETRIEVAL_TOP_K: Math.max(1, Math.floor(getNumberEnv("CHAT_RETRIEVAL_TOP_K", 5))),
-  CHAT_RETRIEVAL_MIN_SCORE: getNumberEnv("CHAT_RETRIEVAL_MIN_SCORE", 0.2),
-  CHAT_HISTORY_LIMIT: Math.max(1, Math.floor(getNumberEnv("CHAT_HISTORY_LIMIT", 10))),
+  CHAT_RETRIEVAL_TOP_K: Math.max(
+    1,
+    Math.floor(getNumberEnv("CHAT_RETRIEVAL_TOP_K", 5)),
+  ),
+  CHAT_RETRIEVAL_MIN_SCORE: getNumberEnv("CHAT_RETRIEVAL_MIN_SCORE", 0.5),
+  CHAT_HISTORY_LIMIT: Math.max(
+    1,
+    Math.floor(getNumberEnv("CHAT_HISTORY_LIMIT", 10)),
+  ),
   EMBEDDING_PROVIDER: (process.env.EMBEDDING_PROVIDER || "local") as
     | "local"
     | "openai",
